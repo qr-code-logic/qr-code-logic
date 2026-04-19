@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LCD Controller</title>
+<style>
+    body { font-family: Arial; text-align: center; background: #f0f2f5; padding: 20px; }
+    .container { background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 350px; }
+    input, select, button { padding: 10px; margin: 8px; border-radius: 5px; border: 1px solid #ccc; width: 80%; }
+    button { background: #007bff; color: white; cursor: pointer; border: none; }
+    button:hover { background: #0056b3; }
+    .logout-btn { background: #dc3545; }
+    .logout-btn:hover { background: #a71d2a; }
+    /* Landscape Canvas */
+    canvas { border: 5px solid #333; background: black; margin-bottom: 10px; width: 320px; height: 240px; }
+    #timerDisplay { margin-top: 10px; font-weight: bold; color: #d9534f; }
+</style>
+</head>
+<body>
+
+<div class="container" id="mainContainer">
+    <h2>📟 LCD Controller</h2>
+    <div id="status">Connecting...</div>
+    <canvas id="preview" width="320" height="240"></canvas><br>
+    <input type="text" id="msg" placeholder="Type your message"><br>
+    
+    <label>Color:</label> 
+    <select id="color">
+        <option value="#ffffff">White</option>
+        <option value="#ff0000">Red</option>
+        <option value="#00ff00">Green</option>
+        <option value="#0000ff">Blue</option>
+        <option value="#ffff00">Yellow</option>
+        <option value="#ffa500">Orange</option>
+        <option value="#ffc0cb">Pink</option>
+        <option value="#800080">Purple</option>
+    </select><br>
+
+    <label>Vertical Position:</label>
+    <select id="vPos">
+        <option value="top">Top</option>
+        <option value="middle">Middle</option>
+        <option value="bottom">Bottom</option>
+    </select><br>
+
+    <label>Alignment:</label>
+    <select id="align">
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right">Right</option>
+    </select><br>
+
+    <label>Font Size:</label> <input type="range" id="size" min="1" max="5" value="2"><br>
+    <button onclick="sendData()">Send to Display</button>
+    <div id="timerDisplay">Session expires in: 10:00</div>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, update, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+const firebaseConfig = { databaseURL: "https://qrcode-80888-default-rtdb.asia-southeast1.firebasedatabase.app" };
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const dataRef = ref(db, "/");
+const sessionRef = ref(db, "session");
+
+async function checkSession() {
+    const snapshot = await get(sessionRef);
+    if (snapshot.exists() && snapshot.val().active === true) {
+        document.body.innerHTML = "<h1>❌ System Busy</h1><p>Another user is currently logged in. Please try again after they logout.</p>";
+        return false;
+    }
+    set(sessionRef, { active: true });
+    return true;
+}
+checkSession();
+
+let timeLeft = 600; 
+function updateTimer() {
+    let minutes = Math.floor(timeLeft / 60);
+    let seconds = timeLeft % 60;
+    document.getElementById("timerDisplay").innerText = `Session expires in: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    if (timeLeft <= 0) { logout(); } else { timeLeft--; }
+}
+setInterval(updateTimer, 1000);
+
+window.logout = function() {
+    set(sessionRef, { active: false });
+    const container = document.getElementById('mainContainer');
+    container.innerHTML = `
+        <h2>📟 LCD Controller</h2>
+        <h3 style="color: #28a745;">Thank you!</h3>
+        <p>You have been logged out successfully.</p>
+        <p>Redirecting to login...</p>
+    `;
+    setTimeout(() => { window.location.href = "login.html"; }, 3000); 
+};
+
+const canvas = document.getElementById("preview");
+const ctx = canvas.getContext("2d");
+
+function drawPreview() {
+    const text = document.getElementById("msg").value;
+    const color = document.getElementById("color").value;
+    const size = document.getElementById("size").value;
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, 320, 240); // Landscape dimensions
+    ctx.fillStyle = color;
+    ctx.font = `${size * 15 + 10}px Arial`;
+    ctx.textAlign = "center";
+    ctx.fillText(text, 160, 120); // Center of 320x240
+}
+
+document.getElementById("msg").oninput = drawPreview;
+document.getElementById("color").onchange = drawPreview;
+document.getElementById("size").oninput = drawPreview;
+
+window.sendData = async function() {
+    await update(dataRef, {
+        message: document.getElementById("msg").value,
+        color: document.getElementById("color").value,
+        vPos: document.getElementById("vPos").value,
+        align: document.getElementById("align").value,
+        fontSize: Number(document.getElementById("size").value)
+    });
+    alert("✅ Sent!");
+};
+
+onValue(dataRef, () => { document.getElementById("status").innerText = "Connected ✔"; });
+drawPreview();
+</script>
+</body>
+</html>
