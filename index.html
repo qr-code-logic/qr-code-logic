@@ -8,13 +8,16 @@
     body { font-family: Arial; text-align: center; background: #f0f2f5; padding: 20px; }
     .container { background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 350px; }
     input, select, button { padding: 10px; margin: 8px; border-radius: 5px; border: 1px solid #ccc; width: 80%; }
-    button { background: #007bff; color: white; cursor: pointer; border: none; }
+    button { background: #007bff; color: white; cursor: pointer; border: none; font-weight: bold; }
     button:hover { background: #0056b3; }
-    .logout-btn { background: #dc3545; }
+    .logout-btn { background: #dc3545; margin-top: 20px; }
     .logout-btn:hover { background: #a71d2a; }
+    .force-btn { background: #ffc107; color: black; margin-top: 15px; }
+    .force-btn:hover { background: #e0a800; }
     /* Landscape Canvas */
-    canvas { border: 5px solid #333; background: black; margin-bottom: 10px; width: 320px; height: 240px; }
-    #timerDisplay { margin-top: 10px; font-weight: bold; color: #d9534f; }
+    canvas { border: 5px solid #333; background: black; margin-bottom: 10px; width: 320px; height: 240px; border-radius: 8px; }
+    #timerDisplay { margin-top: 10px; font-weight: bold; color: #d9534f; font-size: 14px; }
+    #status { color: #28a745; margin-bottom: 10px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -23,6 +26,7 @@
     <h2>📟 LCD Controller</h2>
     <div id="status">Connecting...</div>
     <canvas id="preview" width="320" height="240"></canvas><br>
+    
     <input type="text" id="msg" placeholder="Type your message"><br>
     
     <label>Color:</label> 
@@ -40,21 +44,23 @@
     <label>Vertical Position:</label>
     <select id="vPos">
         <option value="top">Top</option>
-        <option value="middle">Middle</option>
+        <option value="middle" selected>Middle</option>
         <option value="bottom">Bottom</option>
     </select><br>
 
     <label>Alignment:</label>
     <select id="align">
         <option value="left">Left</option>
-        <option value="center">Center</option>
+        <option value="center" selected>Center</option>
         <option value="right">Right</option>
     </select><br>
 
     <label>Font Size:</label> <input type="range" id="size" min="1" max="5" value="2"><br>
+    
     <button onclick="sendData()">Send to Display</button>
+    
     <div id="timerDisplay">Session expires in: 10:00</div>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <button class="logout-btn" onclick="logout()">Logout Now</button>
 </div>
 
 <script type="module">
@@ -67,24 +73,41 @@ const db = getDatabase(app);
 const dataRef = ref(db, "/");
 const sessionRef = ref(db, "session");
 
-// Check if someone else is using the app
+// --- 1. SESSION & SECURITY LOGIC ---
+
 async function checkSession() {
     const snapshot = await get(sessionRef);
     if (snapshot.exists() && snapshot.val().active === true) {
-        document.body.innerHTML = "<h1>❌ System Busy</h1><p>Another user is currently logged in. Please try again after they logout.</p>";
+        document.getElementById('mainContainer').innerHTML = `
+            <h2>📟 System Busy</h2>
+            <p>Another user is currently controlling the LCD.</p>
+            <p>Wait for them to finish, or use the button below if you think the session is abandoned.</p>
+            <button class="force-btn" onclick="window.forceUnlock()">Force Unlock / Reset</button>
+        `;
         return false;
     }
-    // Set session as active when you enter
     set(sessionRef, { active: true });
     return true;
 }
 checkSession();
 
-// Timer Logic: 600 seconds = 10 minutes
-let timeLeft = 600; 
-const timerInterval = setInterval(updateTimer, 1000);
+// Force Unlock function for the button
+window.forceUnlock = function() {
+    if(confirm("This will kick the other user out. Are you sure?")) {
+        set(sessionRef, { active: false });
+        location.reload(); 
+    }
+};
 
-function updateTimer() {
+// Clear session if tab is closed
+window.addEventListener('beforeunload', () => {
+    set(sessionRef, { active: false });
+});
+
+// --- 2. TIMER LOGIC ---
+
+let timeLeft = 600; 
+const timerInterval = setInterval(() => {
     let minutes = Math.floor(timeLeft / 60);
     let seconds = timeLeft % 60;
     const display = document.getElementById("timerDisplay");
@@ -94,52 +117,46 @@ function updateTimer() {
     }
 
     if (timeLeft <= 0) {
-        clearInterval(timerInterval); // Stop the clock
-        logout(); // Trigger logout
+        clearInterval(timerInterval);
+        logout();
     } else {
         timeLeft--;
     }
-}
+}, 1000);
 
 window.logout = function() {
-    // 1. Tell Firebase the session is over immediately
     set(sessionRef, { active: false });
-
-    // 2. Clear the screen
-    const container = document.getElementById('mainContainer');
-    if (container) {
-        container.innerHTML = `
-            <h2>📟 LCD Controller</h2>
-            <h3 style="color: #dc3545;">Session Expired</h3>
-            <p>You have been automatically logged out for security.</p>
-            <p>Redirecting to login...</p>
-        `;
-    }
-
-    // 3. Send back to login page after 3 seconds
-    setTimeout(() => { 
-        window.location.href = "login.html"; 
-    }, 3000); 
+    document.getElementById('mainContainer').innerHTML = `
+        <h2>📟 LCD Controller</h2>
+        <h3 style="color: #28a745;">Session Ended</h3>
+        <p>You have been logged out successfully.</p>
+        <p>Redirecting...</p>
+    `;
+    setTimeout(() => { window.location.href = "login.html"; }, 2500); 
 };
 
-// --- Rest of your Preview & Send Logic ---
+// --- 3. UI & DISPLAY LOGIC ---
+
 const canvas = document.getElementById("preview");
 const ctx = canvas.getContext("2d");
 
 function drawPreview() {
-    const text = document.getElementById("msg").value;
+    const text = document.getElementById("msg").value || "Preview Text";
     const color = document.getElementById("color").value;
     const size = document.getElementById("size").value;
+    
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, 320, 240); 
     ctx.fillStyle = color;
-    ctx.font = `${size * 15 + 10}px Arial`;
+    ctx.font = `${size * 10 + 20}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillText(text, 160, 120); 
+    ctx.fillText(text, 160, 130); 
 }
 
 document.getElementById("msg").oninput = drawPreview;
 document.getElementById("color").onchange = drawPreview;
+document.getElementById("vPos").onchange = drawPreview;
+document.getElementById("align").onchange = drawPreview;
 document.getElementById("size").oninput = drawPreview;
 
 window.sendData = async function() {
@@ -150,10 +167,14 @@ window.sendData = async function() {
         align: document.getElementById("align").value,
         fontSize: Number(document.getElementById("size").value)
     });
-    alert("✅ Sent!");
+    alert("✅ Sent to LCD!");
 };
 
-onValue(dataRef, () => { document.getElementById("status").innerText = "Connected ✔"; });
+onValue(dataRef, () => { 
+    const statusDiv = document.getElementById("status");
+    if(statusDiv) statusDiv.innerText = "Connected ✔"; 
+});
+
 drawPreview();
 </script>
 </body>
