@@ -67,38 +67,62 @@ const db = getDatabase(app);
 const dataRef = ref(db, "/");
 const sessionRef = ref(db, "session");
 
+// Check if someone else is using the app
 async function checkSession() {
     const snapshot = await get(sessionRef);
     if (snapshot.exists() && snapshot.val().active === true) {
         document.body.innerHTML = "<h1>❌ System Busy</h1><p>Another user is currently logged in. Please try again after they logout.</p>";
         return false;
     }
+    // Set session as active when you enter
     set(sessionRef, { active: true });
     return true;
 }
 checkSession();
 
+// Timer Logic: 600 seconds = 10 minutes
 let timeLeft = 600; 
+const timerInterval = setInterval(updateTimer, 1000);
+
 function updateTimer() {
     let minutes = Math.floor(timeLeft / 60);
     let seconds = timeLeft % 60;
-    document.getElementById("timerDisplay").innerText = `Session expires in: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-    if (timeLeft <= 0) { logout(); } else { timeLeft--; }
+    const display = document.getElementById("timerDisplay");
+    
+    if(display) {
+        display.innerText = `Session expires in: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    }
+
+    if (timeLeft <= 0) {
+        clearInterval(timerInterval); // Stop the clock
+        logout(); // Trigger logout
+    } else {
+        timeLeft--;
+    }
 }
-setInterval(updateTimer, 1000);
 
 window.logout = function() {
+    // 1. Tell Firebase the session is over immediately
     set(sessionRef, { active: false });
+
+    // 2. Clear the screen
     const container = document.getElementById('mainContainer');
-    container.innerHTML = `
-        <h2>📟 LCD Controller</h2>
-        <h3 style="color: #28a745;">Thank you!</h3>
-        <p>You have been logged out successfully.</p>
-        <p>Redirecting to login...</p>
-    `;
-    setTimeout(() => { window.location.href = "login.html"; }, 3000); 
+    if (container) {
+        container.innerHTML = `
+            <h2>📟 LCD Controller</h2>
+            <h3 style="color: #dc3545;">Session Expired</h3>
+            <p>You have been automatically logged out for security.</p>
+            <p>Redirecting to login...</p>
+        `;
+    }
+
+    // 3. Send back to login page after 3 seconds
+    setTimeout(() => { 
+        window.location.href = "login.html"; 
+    }, 3000); 
 };
 
+// --- Rest of your Preview & Send Logic ---
 const canvas = document.getElementById("preview");
 const ctx = canvas.getContext("2d");
 
@@ -107,11 +131,11 @@ function drawPreview() {
     const color = document.getElementById("color").value;
     const size = document.getElementById("size").value;
     ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, 320, 240); // Landscape dimensions
+    ctx.fillRect(0, 0, 320, 240); 
     ctx.fillStyle = color;
     ctx.font = `${size * 15 + 10}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillText(text, 160, 120); // Center of 320x240
+    ctx.fillText(text, 160, 120); 
 }
 
 document.getElementById("msg").oninput = drawPreview;
